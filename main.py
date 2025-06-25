@@ -97,6 +97,52 @@ async def clusters(client=Depends(get_client)):
     return data
 
 
+@app.get("/hosts")
+async def hosts(client=Depends(get_client)):
+    hosts = list_hosts(client)
+    # map minimal fields
+    return [{"name": h.name, "cpu": h.cpu_count, "memory": h.memory_size_MiB, "status": h.connection_state} for h in hosts]
+
+
+@app.get("/vms")
+async def vms(client=Depends(get_client)):
+    vms = list_vms(client)
+    return [
+        {
+            "name": vm.name,
+            "cpu": vm.cpu_count,
+            "memory": vm.memory_size_MiB,
+            "power_state": vm.power_state,
+        }
+        for vm in vms
+    ]
+
+
+@app.get("/datastores")
+async def datastores(client=Depends(get_client)):
+    dss = list_datastores(client)
+    return [
+        {
+            "name": ds.name,
+            "capacity_gb": round(ds.capacity / 1024**3, 1),
+            "free_gb": round(ds.free_space / 1024**3, 1),
+            "type": ds.type,
+        }
+        for ds in dss
+    ]
+
+
+@app.get("/networks")
+async def networks(client=Depends(get_client)):
+    nets = client.vcenter.Network.list()  # type: ignore
+    return [{"name": n.name, "type": n.type} for n in nets]
+
+
+@app.post("/capacity")
+async def capacity(payload: dict):
+    return capacity_calculator(payload)
+
+
 @app.get("/export")
 async def export_report():
     # TODO: Generate Excel and return FileResponse
