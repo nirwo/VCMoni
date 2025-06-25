@@ -61,6 +61,10 @@ async def root():
     return FileResponse(index_path, media_type="text/html")
 
 
+import io
+import pandas as pd
+from fastapi.responses import StreamingResponse
+
 from vcenter_client import (
     list_clusters,
     list_hosts,
@@ -68,6 +72,7 @@ from vcenter_client import (
     list_datastores,
     capacity_calculator,
 )
+from storage import bulk_upsert, read_all
 
 # API endpoints
 @app.get("/overview")
@@ -76,6 +81,11 @@ async def overview(client=Depends(get_client)):
     hosts = list_hosts(client)
     vms = list_vms(client)
     datastores = list_datastores(client)
+
+    bulk_upsert("clusters", [c.__dict__ for c in clusters], key_field="name")
+    bulk_upsert("hosts", [h.__dict__ for h in hosts], key_field="name")
+    bulk_upsert("vms", [v.__dict__ for v in vms], key_field="name")
+    bulk_upsert("datastores", [d.__dict__ for d in datastores], key_field="name")
 
     return {
         "clusters": len(clusters),
@@ -94,6 +104,7 @@ async def clusters(client=Depends(get_client)):
         util = {"cpu_pct": 50, "mem_pct": 60, "storage_pct": 40}
         item = {"name": c.name, **util, "capacity": capacity_calculator(util)}
         data.append(item)
+    bulk_upsert("clusters", [c.__dict__ for c in clusters], key_field="name")
     return data
 
 
@@ -121,6 +132,7 @@ async def vms(client=Depends(get_client)):
 @app.get("/datastores")
 async def datastores(client=Depends(get_client)):
     dss = list_datastores(client)
+    bulk_upsert("datastores", [d.__dict__ for d in dss], key_field="name")
     return [
         {
             "name": ds.name,
@@ -135,6 +147,7 @@ async def datastores(client=Depends(get_client)):
 @app.get("/networks")
 async def networks(client=Depends(get_client)):
     nets = client.vcenter.Network.list()  # type: ignore
+    bulk_upsert("networks", [n.__dict__ for n in nets], key_field="name")
     return [{"name": n.name, "type": n.type} for n in nets]
 
 
@@ -145,6 +158,19 @@ async def capacity(payload: dict):
 
 @app.get("/export")
 async def export_report():
-    # TODO: Generate Excel and return FileResponse
-    return {"todo": True}
+    # build excel from cached data
+    sheets = {
+        "clusters": pd.DataFrame(read_all("clusters")),
+        "hosts": pd.DataFrame(read_all("hosts")),
+        "vms": pd.DataFrame(read_all("vms")),
+        "datastores": pd.DataFrame(read_all("datastores")),
+        "networks": pd.DataFrame(read_all("networks")),
+    }
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for name, df in sheets.items():
+            if not df.empty:
+                df.to_excel(writer, sheet_name=name, index=False)
+    output.seek(0)
+    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=vc_report.xlsx"})
 
