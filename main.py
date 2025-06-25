@@ -61,11 +61,40 @@ async def root():
     return FileResponse(index_path, media_type="text/html")
 
 
-# Placeholder endpoints for frontend data
+from vcenter_client import (
+    list_clusters,
+    list_hosts,
+    list_vms,
+    list_datastores,
+    capacity_calculator,
+)
+
+# API endpoints
 @app.get("/overview")
 async def overview(client=Depends(get_client)):
-    # TODO: Implement actual retrieval from vCenter
-    return {"clusters": 0, "hosts": 0, "vms": 0, "datastores": 0}
+    clusters = list_clusters(client)
+    hosts = list_hosts(client)
+    vms = list_vms(client)
+    datastores = list_datastores(client)
+
+    return {
+        "clusters": len(clusters),
+        "hosts": len(hosts),
+        "vms": len(vms),
+        "datastores": len(datastores),
+    }
+
+
+@app.get("/clusters")
+async def clusters(client=Depends(get_client)):
+    clusters = list_clusters(client)
+    data = []
+    for c in clusters:
+        # Actual utilization retrieval TBD
+        util = {"cpu_pct": 50, "mem_pct": 60, "storage_pct": 40}
+        item = {"name": c.name, **util, "capacity": capacity_calculator(util)}
+        data.append(item)
+    return data
 
 
 @app.get("/export")
