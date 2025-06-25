@@ -1,2 +1,2 @@
 @echo off
-pwsh -NoLogo -File server.ps1
+pwsh -NoLogo -File server_polaris.ps1
